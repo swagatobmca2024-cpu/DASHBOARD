@@ -312,213 +312,6 @@ def fetch_stock_data(ticker: str, use_mock: bool = False) -> Dict:
         st.warning(f"Failed to fetch {ticker}, using mock data: {str(e)}")
         return get_mock_data(ticker)
 
-def calculate_returns_series(prices: np.ndarray) -> np.ndarray:
-    """Calculate daily returns from price series using vectorized operations"""
-    if len(prices) < 2:
-        return np.array([])
-    return np.diff(prices) / prices[:-1]
-
-def calculate_portfolio_returns_series(holdings_data: List[Dict]) -> Tuple[np.ndarray, pd.DatetimeIndex]:
-    """Calculate daily portfolio returns and dates using vectorized operations"""
-    if not holdings_data or all(h['history'].empty for h in holdings_data):
-        return np.array([]), pd.DatetimeIndex([])
-
-    min_dates = [h['history'].index.min() for h in holdings_data if not h['history'].empty]
-    if not min_dates:
-        return np.array([]), pd.DatetimeIndex([])
-
-    min_date = min(min_dates)
-    max_dates = [h['history'].index.max() for h in holdings_data if not h['history'].empty]
-    max_date = max(max_dates)
-
-    total_value = sum(h['current_value'] for h in holdings_data)
-    if total_value == 0:
-        return np.array([]), pd.DatetimeIndex([])
-
-    date_range = pd.date_range(start=min_date, end=max_date, freq='D', tz=IST)
-    portfolio_values = []
-
-    for date in date_range:
-        daily_value = 0
-        for holding in holdings_data:
-            if not holding['history'].empty:
-                hist = holding['history']
-                hist_index = hist.index.tz_localize(None) if hist.index.tzinfo else hist.index
-                date_naive = date.tz_localize(None) if hasattr(date, 'tz_localize') else date
-
-                try:
-                    if date_naive in hist_index.values:
-                        price = hist.loc[date_naive, 'Close']
-                    elif date_naive < hist_index.min():
-                        price = hist['Close'].iloc[0]
-                    else:
-                        price = hist['Close'].iloc[-1]
-                    daily_value += price * holding['quantity']
-                except:
-                    daily_value += hist['Close'].iloc[-1] * holding['quantity']
-
-        portfolio_values.append(daily_value)
-
-    port_returns = calculate_returns_series(np.array(portfolio_values))
-    return port_returns, date_range[1:]
-
-def calculate_rolling_returns(prices: np.ndarray, periods: List[int]) -> Dict[str, float]:
-    """Calculate rolling returns for multiple periods (vectorized)"""
-    results = {}
-    total_return = (prices[-1] / prices[0] - 1) * 100 if len(prices) > 0 else 0
-
-    for period in periods:
-        if len(prices) > period:
-            period_return = (prices[-1] / prices[-period - 1] - 1) * 100
-            results[f'{period}D'] = period_return
-        else:
-            results[f'{period}D'] = total_return if period == periods[-1] else None
-
-    return results
-
-def calculate_maximum_drawdown(prices: np.ndarray) -> Tuple[float, int, int]:
-    """Calculate maximum drawdown and drawdown period (vectorized)"""
-    if len(prices) < 2:
-        return 0.0, 0, 0
-
-    cummax = np.maximum.accumulate(prices)
-    drawdown = (prices - cummax) / cummax * 100
-    max_dd = np.min(drawdown)
-    max_dd_idx = np.argmin(drawdown)
-
-    peak_idx = np.argmax(prices[:max_dd_idx + 1])
-    dd_duration = max_dd_idx - peak_idx
-
-    return max_dd, dd_duration, max_dd_idx
-
-def calculate_sortino_ratio(returns: np.ndarray, target_return: float = 0.0) -> float:
-    """Calculate Sortino Ratio using downside deviation (vectorized)"""
-    if len(returns) < 2:
-        return 0.0
-
-    excess_returns = returns - target_return
-    downside_returns = np.minimum(excess_returns, 0)
-    downside_deviation = np.sqrt(np.mean(downside_returns ** 2))
-
-    if downside_deviation == 0:
-        return 0.0
-
-    annual_return = np.mean(returns) * 252
-    sortino = (annual_return - target_return * 252) / downside_deviation * np.sqrt(252)
-    return sortino
-
-def calculate_var_cvar(returns: np.ndarray, confidence: float = 0.95) -> Tuple[float, float]:
-    """Calculate Value at Risk (VaR) and Conditional VaR (CVaR) at given confidence level"""
-    if len(returns) < 2:
-        return 0.0, 0.0
-
-    var = np.percentile(returns, (1 - confidence) * 100)
-    cvar = returns[returns <= var].mean() if np.any(returns <= var) else var
-
-    return var * 100, cvar * 100
-
-def calculate_portfolio_correlation_matrix(holdings_data: List[Dict]) -> Tuple[pd.DataFrame, float, List[str]]:
-    """Calculate correlation matrix for portfolio holdings and identify high correlations"""
-    if len(holdings_data) < 2:
-        return pd.DataFrame(), 0.0, []
-
-    valid_holdings = [h for h in holdings_data if not h['history'].empty and len(h['history']) > 20]
-    if len(valid_holdings) < 2:
-        return pd.DataFrame(), 0.0, []
-
-    min_len = min(len(h['history']) for h in valid_holdings)
-    min_len = max(min_len, 20)
-
-    returns_dict = {}
-    for h in valid_holdings:
-        returns_dict[h['ticker']] = calculate_returns_series(h['history']['Close'].values[-min_len:])
-
-    if not returns_dict or any(len(r) == 0 for r in returns_dict.values()):
-        return pd.DataFrame(), 0.0, []
-
-    returns_df = pd.DataFrame(returns_dict)
-    corr_matrix = returns_df.corr()
-
-    avg_correlation = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].mean()
-
-    high_corr_pairs = []
-    for i in range(len(corr_matrix)):
-        for j in range(i + 1, len(corr_matrix)):
-            if corr_matrix.iloc[i, j] > 0.75:
-                high_corr_pairs.append(f"{corr_matrix.index[i]}-{corr_matrix.columns[j]} ({corr_matrix.iloc[i, j]:.2f})")
-
-    return corr_matrix, avg_correlation, high_corr_pairs
-
-def calculate_contribution_to_return(holdings_data: List[Dict], portfolio_returns: np.ndarray) -> Dict[str, float]:
-    """Calculate each holding's contribution to total portfolio return"""
-    if len(portfolio_returns) == 0 or len(holdings_data) == 0:
-        return {}
-
-    total_value = sum(h['current_value'] for h in holdings_data)
-    if total_value == 0:
-        return {}
-
-    contributions = {}
-    total_return = (1 + portfolio_returns).prod() - 1
-
-    for h in holdings_data:
-        if not h['history'].empty and len(h['history']) > 1:
-            holding_returns = calculate_returns_series(h['history']['Close'].values[-len(portfolio_returns) - 1:])
-            if len(holding_returns) > 0:
-                holding_total_return = (1 + holding_returns).prod() - 1
-                weight = h['current_value'] / total_value
-                contribution = (holding_total_return * weight / (total_return + 1e-10)) * 100
-                contributions[h['ticker']] = contribution
-
-    return contributions
-
-@st.cache_data(ttl=30)
-def fetch_benchmark_data(ticker: str = '^GSPC') -> pd.DataFrame:
-    """Fetch benchmark (S&P 500) data for comparison"""
-    try:
-        bench = yf.Ticker(ticker)
-        hist = bench.history(period='6mo')
-
-        if hist.empty:
-            return pd.DataFrame()
-
-        if hist.index.tzinfo is None:
-            hist.index = hist.index.tz_localize(US_EASTERN)
-        hist.index = hist.index.tz_convert(IST)
-
-        return hist
-    except:
-        return pd.DataFrame()
-
-def calculate_benchmark_comparison(portfolio_returns: np.ndarray, benchmark_history: pd.DataFrame) -> Dict:
-    """Compare portfolio performance against benchmark"""
-    if len(portfolio_returns) == 0 or benchmark_history.empty:
-        return {'portfolio_return': 0, 'benchmark_return': 0, 'outperformance': 0, 'correlation': 0}
-
-    if len(benchmark_history) < len(portfolio_returns) + 1:
-        return {'portfolio_return': 0, 'benchmark_return': 0, 'outperformance': 0, 'correlation': 0}
-
-    bench_returns = calculate_returns_series(benchmark_history['Close'].values[-len(portfolio_returns) - 1:])
-
-    if len(bench_returns) == 0:
-        return {'portfolio_return': 0, 'benchmark_return': 0, 'outperformance': 0, 'correlation': 0}
-
-    min_len = min(len(portfolio_returns), len(bench_returns))
-    port_ret = portfolio_returns[-min_len:]
-    bench_ret = bench_returns[-min_len:]
-
-    port_total = (1 + port_ret).prod() - 1
-    bench_total = (1 + bench_ret).prod() - 1
-
-    correlation = np.corrcoef(port_ret, bench_ret)[0, 1] if min_len > 1 else 0
-
-    return {
-        'portfolio_return': port_total * 100,
-        'benchmark_return': bench_total * 100,
-        'outperformance': (port_total - bench_total) * 100,
-        'correlation': correlation
-    }
-
 def calculate_portfolio_metrics(portfolio: List[Dict], use_mock: bool = False) -> Dict:
     """Calculate comprehensive portfolio metrics"""
     total_value = 0
@@ -556,13 +349,15 @@ def calculate_portfolio_metrics(portfolio: List[Dict], use_mock: bool = False) -
     daily_change = sum([h['day_change'] * h['quantity'] for h in holdings_data])
     daily_change_percent = (daily_change / total_value) * 100 if total_value > 0 else 0
 
-    port_returns, _ = calculate_portfolio_returns_series(holdings_data)
+    returns = []
+    for h in holdings_data:
+        if not h['history'].empty and len(h['history']) > 1:
+            returns.extend(h['history']['Close'].pct_change().dropna().values * (h['current_value'] / total_value))
 
     sharpe_ratio = 0
-    if len(port_returns) > 0:
-        annual_return = np.mean(port_returns) * 252
-        annual_vol = np.std(port_returns) * np.sqrt(252)
-        sharpe_ratio = annual_return / (annual_vol + 1e-10)
+    if len(returns) > 0:
+        returns_array = np.array(returns)
+        sharpe_ratio = (np.mean(returns_array) * np.sqrt(252)) / (np.std(returns_array) + 1e-10)
 
     return {
         'total_value': total_value,
@@ -1018,61 +813,6 @@ def render_portfolio_tab(metrics: Dict):
         with st.expander(f"{holding['ticker']} - ${holding['current_price']:.2f}"):
             st.plotly_chart(create_candlestick_chart(holding['ticker'], holding['history']), use_container_width=True)
 
-def calculate_watchlist_analytics(stock_history: pd.DataFrame, current_price: float) -> Dict:
-    """Calculate multi-timeframe returns and volatility for watchlist item"""
-    if stock_history.empty or len(stock_history) < 2:
-        return {'1D': 0, '1W': 0, '1M': 0, 'volatility': 0, 'volatility_class': 'N/A'}
-
-    prices = stock_history['Close'].values
-
-    day_return = (prices[-1] / prices[-2] - 1) * 100 if len(prices) > 1 else 0
-
-    week_return = (prices[-1] / prices[-6] - 1) * 100 if len(prices) > 5 else day_return
-
-    month_return = (prices[-1] / prices[-21] - 1) * 100 if len(prices) > 20 else day_return
-
-    returns = calculate_returns_series(prices)
-    annual_vol = np.std(returns) * np.sqrt(252) * 100 if len(returns) > 1 else 0
-
-    if annual_vol < 15:
-        vol_class = "Low"
-    elif annual_vol < 25:
-        vol_class = "Medium"
-    else:
-        vol_class = "High"
-
-    return {
-        '1D': day_return,
-        '1W': week_return,
-        '1M': month_return,
-        'volatility': annual_vol,
-        'volatility_class': vol_class
-    }
-
-def calculate_watchlist_correlation(ticker: str, stock_history: pd.DataFrame, holdings_data: List[Dict]) -> float:
-    """Calculate correlation between watchlist item and portfolio"""
-    if stock_history.empty or not holdings_data or all(h['history'].empty for h in holdings_data):
-        return 0.0
-
-    min_len = min(len(stock_history), min(len(h['history']) for h in holdings_data if not h['history'].empty))
-
-    if min_len < 20:
-        return 0.0
-
-    watch_returns = calculate_returns_series(stock_history['Close'].values[-min_len:])
-
-    port_returns, _ = calculate_portfolio_returns_series(holdings_data)
-    if len(port_returns) < min_len:
-        return 0.0
-
-    port_returns_aligned = port_returns[-min_len:]
-
-    if len(watch_returns) == 0 or len(port_returns_aligned) == 0:
-        return 0.0
-
-    correlation = np.corrcoef(watch_returns, port_returns_aligned)[0, 1]
-    return correlation if not np.isnan(correlation) else 0.0
-
 def render_watchlist_tab():
     """Render watchlist tab"""
     st.subheader("👀 Watchlist")
@@ -1096,13 +836,8 @@ def render_watchlist_tab():
 
     st.markdown("---")
 
-    portfolio_metrics = calculate_portfolio_metrics(st.session_state.portfolio, st.session_state.use_mock_data)
-    holdings_data = portfolio_metrics['holdings']
-
     for ticker in st.session_state.watchlist:
         stock_data = fetch_stock_data(ticker, st.session_state.use_mock_data)
-        watch_analytics = calculate_watchlist_analytics(stock_data['history'], stock_data['current_price'])
-        watch_correlation = calculate_watchlist_correlation(ticker, stock_data['history'], holdings_data)
 
         col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
 
@@ -1110,7 +845,6 @@ def render_watchlist_tab():
             st.markdown(f"### {ticker}")
             change_class = "positive" if stock_data['change'] >= 0 else "negative"
             st.markdown(f"<span class='{change_class}'>{stock_data['change_percent']:+.2f}%</span>", unsafe_allow_html=True)
-            st.caption(f"Vol: {watch_analytics['volatility_class']} ({watch_analytics['volatility']:.1f}%) | Corr: {watch_correlation:.2f}")
 
         with col2:
             st.metric("Price", f"${stock_data['current_price']:.2f}")
@@ -1123,250 +857,46 @@ def render_watchlist_tab():
                 fig = create_sparkline(stock_data['history'][-30:])
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.caption(f"1D: {watch_analytics['1D']:+.2f}%")
-        with col2:
-            st.caption(f"1W: {watch_analytics['1W']:+.2f}%")
-        with col3:
-            st.caption(f"1M: {watch_analytics['1M']:+.2f}%")
-
         st.markdown("---")
-
-def create_drawdown_chart(holdings_data: List[Dict]) -> go.Figure:
-    """Create drawdown time-series chart"""
-    port_returns, dates = calculate_portfolio_returns_series(holdings_data)
-
-    if len(port_returns) == 0:
-        return go.Figure().add_annotation(text="Insufficient data")
-
-    portfolio_values = np.cumprod(1 + port_returns)
-    cummax = np.maximum.accumulate(portfolio_values)
-    drawdown = (portfolio_values - cummax) / cummax * 100
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=dates,
-        y=drawdown,
-        mode='lines',
-        name='Drawdown',
-        line=dict(color='#ef4444', width=2),
-        fill='tozeroy',
-        fillcolor='rgba(239, 68, 68, 0.2)',
-        hovertemplate='<b>%{x|%Y-%m-%d}</b><br>Drawdown: %{y:.2f}%<extra></extra>'
-    ))
-
-    fig.update_layout(
-        title='Portfolio Drawdown Over Time',
-        xaxis_title='Date',
-        yaxis_title='Drawdown (%)',
-        template='plotly_white',
-        height=350,
-        hovermode='x unified',
-        margin=dict(l=0, r=0, t=40, b=0)
-    )
-
-    return fig
-
-def create_correlation_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
-    """Create correlation matrix heatmap"""
-    if corr_matrix.empty:
-        return go.Figure().add_annotation(text="Insufficient data for correlation")
-
-    fig = go.Figure(data=go.Heatmap(
-        z=corr_matrix.values,
-        x=corr_matrix.columns,
-        y=corr_matrix.index,
-        colorscale='RdBu',
-        zmid=0,
-        zmin=-1,
-        zmax=1,
-        hovertemplate='%{y} - %{x}: %{z:.3f}<extra></extra>'
-    ))
-
-    fig.update_layout(
-        title='Portfolio Correlation Matrix',
-        height=400,
-        margin=dict(l=0, r=0, t=40, b=0)
-    )
-
-    return fig
-
-def create_contribution_chart(contributions: Dict[str, float]) -> go.Figure:
-    """Create contribution to return bar chart"""
-    if not contributions:
-        return go.Figure().add_annotation(text="Insufficient data")
-
-    tickers = list(contributions.keys())
-    contrib_values = list(contributions.values())
-    colors = ['#10b981' if v > 0 else '#ef4444' for v in contrib_values]
-
-    fig = go.Figure(data=[go.Bar(
-        x=tickers,
-        y=contrib_values,
-        marker=dict(color=colors),
-        hovertemplate='<b>%{x}</b><br>Contribution: %{y:.2f}%<extra></extra>'
-    )])
-
-    fig.update_layout(
-        title='Contribution to Portfolio Return (%)',
-        xaxis_title='Ticker',
-        yaxis_title='Contribution (%)',
-        template='plotly_white',
-        height=350,
-        margin=dict(l=0, r=0, t=40, b=0)
-    )
-
-    return fig
-
-def create_benchmark_comparison_chart(portfolio_returns: np.ndarray, benchmark_history: pd.DataFrame) -> go.Figure:
-    """Create portfolio vs benchmark comparison chart"""
-    if len(portfolio_returns) == 0 or benchmark_history.empty:
-        return go.Figure().add_annotation(text="Insufficient data for benchmark comparison")
-
-    bench_returns = calculate_returns_series(benchmark_history['Close'].values[-len(portfolio_returns) - 1:])
-
-    if len(bench_returns) == 0:
-        return go.Figure().add_annotation(text="Insufficient benchmark data")
-
-    min_len = min(len(portfolio_returns), len(bench_returns))
-    port_cum = np.cumprod(1 + portfolio_returns[-min_len:])
-    bench_cum = np.cumprod(1 + bench_returns[-min_len:])
-
-    dates = benchmark_history.index[-min_len:] if min_len > 0 else []
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=dates,
-        y=port_cum,
-        mode='lines',
-        name='Portfolio',
-        line=dict(color='#667eea', width=2)
-    ))
-    fig.add_trace(go.Scatter(
-        x=dates,
-        y=bench_cum,
-        mode='lines',
-        name='S&P 500',
-        line=dict(color='#10b981', width=2)
-    ))
-
-    fig.update_layout(
-        title='Portfolio vs S&P 500 Benchmark',
-        xaxis_title='Date',
-        yaxis_title='Cumulative Value (Indexed)',
-        template='plotly_white',
-        height=350,
-        hovermode='x unified',
-        margin=dict(l=0, r=0, t=40, b=0)
-    )
-
-    return fig
 
 def render_analytics_tab(metrics: Dict):
     """Render analytics tab"""
     st.subheader("📈 Advanced Analytics")
 
-    holdings_data = metrics['holdings']
-    port_returns, _ = calculate_portfolio_returns_series(holdings_data)
-
-    if len(holdings_data) == 0:
-        st.info("Add holdings to portfolio to view analytics")
-        return
-
-    st.markdown("### Performance Analytics")
-    col1, col2, col3 = st.columns(3)
-
-    if len(port_returns) > 0:
-        prices = np.cumprod(1 + port_returns)
-        rolling_rets = calculate_rolling_returns(prices, [30, 90, 180, 252])
-
-        with col1:
-            st.metric("1M Return", f"{rolling_rets.get('30D', 0):.2f}%")
-        with col2:
-            st.metric("3M Return", f"{rolling_rets.get('90D', 0):.2f}%")
-        with col3:
-            st.metric("6M Return", f"{rolling_rets.get('180D', 0):.2f}%")
-
-    st.markdown("---")
-    st.markdown("### Risk Metrics")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    if len(port_returns) > 0:
-        max_dd, dd_duration, _ = calculate_maximum_drawdown(np.cumprod(1 + port_returns))
-        sortino = calculate_sortino_ratio(port_returns)
-        var_95, cvar_95 = calculate_var_cvar(port_returns, 0.95)
-
-        with col1:
-            st.metric("Max Drawdown", f"{max_dd:.2f}%")
-        with col2:
-            st.metric("Sortino Ratio", f"{sortino:.2f}")
-        with col3:
-            st.metric("VaR (95%)", f"{var_95:.2f}%")
-        with col4:
-            st.metric("CVaR (95%)", f"{cvar_95:.2f}%")
-
-    st.markdown("---")
-    st.markdown("### Benchmark Comparison")
-
-    benchmark_hist = fetch_benchmark_data()
-    bench_comparison = calculate_benchmark_comparison(port_returns, benchmark_hist)
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric("Portfolio Return", f"{bench_comparison['portfolio_return']:.2f}%")
-    with col2:
-        st.metric("S&P 500 Return", f"{bench_comparison['benchmark_return']:.2f}%")
-    with col3:
-        outperf_color = "green" if bench_comparison['outperformance'] > 0 else "red"
-        st.metric("Outperformance", f"{bench_comparison['outperformance']:.2f}%")
-    with col4:
-        st.metric("Correlation w/ Benchmark", f"{bench_comparison['correlation']:.2f}")
-
-    st.markdown("---")
-    st.markdown("### Visualization")
-
     col1, col2 = st.columns(2)
 
     with col1:
-        st.plotly_chart(create_drawdown_chart(holdings_data), use_container_width=True)
+        st.plotly_chart(create_risk_return_heatmap(metrics['holdings']), use_container_width=True)
 
     with col2:
-        st.plotly_chart(create_benchmark_comparison_chart(port_returns, benchmark_hist), use_container_width=True)
+        if metrics['holdings'] and not metrics['holdings'][0]['history'].empty:
+            volatilities = []
+            for h in metrics['holdings']:
+                if len(h['history']) > 20:
+                    rolling_vol = h['history']['Close'].pct_change().rolling(window=20).std() * np.sqrt(252) * 100
+                    volatilities.append(rolling_vol)
 
-    st.markdown("---")
-    st.markdown("### Contribution Analysis")
+            if volatilities:
+                fig = go.Figure()
+                for i, h in enumerate(metrics['holdings']):
+                    if i < len(volatilities):
+                        fig.add_trace(go.Scatter(
+                            x=h['history'].index[-len(volatilities[i]):],
+                            y=volatilities[i],
+                            mode='lines',
+                            name=h['ticker']
+                        ))
 
-    contributions = calculate_contribution_to_return(holdings_data, port_returns)
-    col1, col2 = st.columns([1, 1])
+                fig.update_layout(
+                    title='Rolling Volatility (20-Day)',
+                    xaxis_title='Date',
+                    yaxis_title='Volatility (%)',
+                    template='plotly_white',
+                    height=400,
+                    margin=dict(l=0, r=0, t=40, b=0)
+                )
 
-    with col1:
-        st.plotly_chart(create_contribution_chart(contributions), use_container_width=True)
-
-    with col2:
-        st.plotly_chart(create_risk_return_heatmap(holdings_data), use_container_width=True)
-
-    st.markdown("---")
-    st.markdown("### Diversification Analysis")
-
-    corr_matrix, avg_corr, high_corr_pairs = calculate_portfolio_correlation_matrix(holdings_data)
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        st.plotly_chart(create_correlation_heatmap(corr_matrix), use_container_width=True)
-
-    with col2:
-        st.markdown(f"**Avg Correlation:** {avg_corr:.3f}")
-
-        if high_corr_pairs:
-            st.warning("High Correlation Pairs (>0.75):")
-            for pair in high_corr_pairs:
-                st.text(pair)
-        else:
-            st.success("No highly correlated pairs detected")
+                st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
     st.subheader("🎲 Monte Carlo Simulation")

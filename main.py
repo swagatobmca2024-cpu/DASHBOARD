@@ -788,35 +788,12 @@ def render_portfolio_tab(metrics: Dict):
             submitted = st.form_submit_button("Add Holding", type="primary")
 
         if submitted and new_ticker:
-            ticker_upper = new_ticker.upper()
-
-            existing_holding = None
-            existing_index = None
-            for idx, holding in enumerate(st.session_state.portfolio):
-                if holding['ticker'] == ticker_upper:
-                    existing_holding = holding
-                    existing_index = idx
-                    break
-
-            if existing_holding:
-                old_quantity = existing_holding['quantity']
-                old_avg_cost = existing_holding['avg_cost']
-
-                new_total_quantity = old_quantity + new_quantity
-                new_weighted_avg_cost = (old_avg_cost * old_quantity + new_avg_cost * new_quantity) / new_total_quantity
-
-                st.session_state.portfolio[existing_index]['quantity'] = new_total_quantity
-                st.session_state.portfolio[existing_index]['avg_cost'] = new_weighted_avg_cost
-
-                st.success(f"Updated {ticker_upper}: {old_quantity} → {new_total_quantity} shares @ ${new_weighted_avg_cost:.2f}")
-            else:
-                st.session_state.portfolio.append({
-                    'ticker': ticker_upper,
-                    'quantity': new_quantity,
-                    'avg_cost': new_avg_cost
-                })
-                st.success(f"Added {ticker_upper} to portfolio!")
-
+            st.session_state.portfolio.append({
+                'ticker': new_ticker.upper(),
+                'quantity': new_quantity,
+                'avg_cost': new_avg_cost
+            })
+            st.success(f"Added {new_ticker.upper()} to portfolio!")
             st.rerun()
 
     st.markdown("---")

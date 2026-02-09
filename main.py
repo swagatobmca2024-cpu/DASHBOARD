@@ -178,6 +178,164 @@ st.header("⬇️ Download Cleaned & Calculated Dataset")
 csv = df.to_csv(index=False).encode("utf-8")
 st.download_button(
     "Download CSV with All 24 Calculations",
+
+    # =====================================================
+# SECTION 7 — ADVANCED ANALYTICS & VISUALIZATIONS
+# =====================================================
+st.header("📊 Advanced Analytics & Visual Insights")
+
+# -----------------------------
+# 1️⃣ Sales Distribution
+# -----------------------------
+st.subheader("Total Sales Distribution")
+fig = px.histogram(
+    df,
+    x="TotalSales",
+    nbins=30,
+    title="Distribution of Order Revenue",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 2️⃣ Box Plot — Outlier Detection
+# -----------------------------
+st.subheader("Order Value Outliers (Box Plot)")
+fig = px.box(
+    df,
+    y="TotalSales",
+    points="outliers",
+    title="Order Value Spread & Outliers",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 3️⃣ Region × Category Heatmap
+# -----------------------------
+st.subheader("Revenue Heatmap: Region vs Product Category")
+heatmap_data = (
+    df.pivot_table(
+        index="Region",
+        columns="ProductCategory",
+        values="TotalSales",
+        aggfunc="sum"
+    )
+)
+
+fig = px.imshow(
+    heatmap_data,
+    text_auto=True,
+    aspect="auto",
+    title="Revenue Contribution Heatmap",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 4️⃣ Monthly Revenue Trend
+# -----------------------------
+st.subheader("Monthly Revenue Trend")
+monthly_sales = (
+    df.groupby(["OrderYear", "OrderMonth", "MonthName"])["TotalSales"]
+    .sum()
+    .reset_index()
+    .sort_values(["OrderYear", "OrderMonth"])
+)
+
+fig = px.line(
+    monthly_sales,
+    x="MonthName",
+    y="TotalSales",
+    markers=True,
+    title="Seasonality & Monthly Revenue Trend",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 5️⃣ Delivery Days Distribution
+# -----------------------------
+st.subheader("Delivery Time Distribution")
+fig = px.histogram(
+    df,
+    x="DeliveryDays",
+    nbins=20,
+    title="Delivery Performance Spread",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 6️⃣ Sales vs Delivery Days
+# -----------------------------
+st.subheader("Sales vs Delivery Efficiency")
+fig = px.scatter(
+    df,
+    x="DeliveryDays",
+    y="TotalSales",
+    color="OrderStatus",
+    title="Does Faster Delivery Influence Sales?",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 7️⃣ Customer Segment vs Revenue
+# -----------------------------
+st.subheader("Revenue by Customer Segment")
+seg_rev = df.groupby("CustomerSegment")["TotalSales"].sum().reset_index()
+
+fig = px.bar(
+    seg_rev,
+    x="CustomerSegment",
+    y="TotalSales",
+    title="Customer Value Contribution",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 8️⃣ Order Status Breakdown
+# -----------------------------
+st.subheader("Order Status Distribution")
+status_counts = df["OrderStatus"].value_counts().reset_index()
+status_counts.columns = ["OrderStatus", "Count"]
+
+fig = px.pie(
+    status_counts,
+    names="OrderStatus",
+    values="Count",
+    title="Operational Order Status Overview",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 9️⃣ Discount Impact Analysis
+# -----------------------------
+st.subheader("Discount vs Total Sales")
+fig = px.scatter(
+    df,
+    x="Discount",
+    y="TotalSales",
+    title="Impact of Discounts on Revenue",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# 🔟 Top Customers — Pareto Insight
+# -----------------------------
+st.subheader("Top Customers Revenue Contribution (Pareto Insight)")
+top_customers = (
+    df.groupby("CustomerName")["TotalSales"]
+    .sum()
+    .sort_values(ascending=False)
+    .head(10)
+    .reset_index()
+)
+
+fig = px.bar(
+    top_customers,
+    x="CustomerName",
+    y="TotalSales",
+    title="Top 10 Customers by Revenue",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+    
     csv,
     "ecommerce_analytics_cleaned.csv",
     "text/csv"

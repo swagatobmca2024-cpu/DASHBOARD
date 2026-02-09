@@ -4,202 +4,208 @@ import numpy as np
 import plotly.express as px
 import matplotlib.pyplot as plt
 
-# -------------------------------------------------
-# PAGE CONFIG
-# -------------------------------------------------
-st.set_page_config(
-    page_title="Advanced E-Commerce Analytics Dashboard",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="E-commerce Data Analytics Dashboard", layout="wide")
 
-# -------------------------------------------------
-# CUSTOM CSS
-# -------------------------------------------------
-st.markdown("""
-<style>
-body {background-color:#f4f6fa;}
-.kpi-card {
-    background: white;
-    padding: 18px;
-    border-radius: 14px;
-    box-shadow: 0px 6px 18px rgba(0,0,0,0.08);
-    text-align: center;
-}
-.kpi-title {font-size: 14px; color: #6b7280;}
-.kpi-value {font-size: 28px; font-weight: bold; color: #111827;}
-</style>
-""", unsafe_allow_html=True)
+st.title("📊 E-commerce Advanced Data Analytics Dashboard")
+st.caption("Upload raw order data → Clean → Analyze → Visualize")
 
-st.title("📊 Advanced E-Commerce Data Analytics Dashboard")
-
-# -------------------------------------------------
-# FILE UPLOADER
-# -------------------------------------------------
-uploaded_file = st.file_uploader(
-    "Upload E-commerce Dataset (CSV or Excel)",
+# ===============================
+# FILE UPLOAD
+# ===============================
+uploaded_file = st.sidebar.file_uploader(
+    "📂 Upload CSV or Excel file",
     type=["csv", "xlsx"]
 )
 
 if uploaded_file is None:
-    st.info("⬆ Upload a dataset to start analytics")
+    st.warning("Please upload a CSV or Excel file to begin analysis.")
     st.stop()
 
-# -------------------------------------------------
+# ===============================
 # LOAD DATA
-# -------------------------------------------------
+# ===============================
 if uploaded_file.name.endswith(".csv"):
     df = pd.read_csv(uploaded_file)
 else:
     df = pd.read_excel(uploaded_file)
 
-# -------------------------------------------------
+st.success("File uploaded successfully!")
+
+# ===============================
 # DATA CLEANING & FEATURE ENGINEERING
-# -------------------------------------------------
+# ===============================
 
-# Discount cleaning
-df["Discount"] = (
-    df["DiscountText"]
-    .astype(str)
-    .str.replace("%", "", regex=False)
-    .str.strip()
-    .replace("nan", "0")
-    .astype(float) / 100
-)
-
-# Quantity validation
-df["Quantity_Num"] = pd.to_numeric(df["Quantity"], errors="coerce")
-df["InvalidQuantity"] = df["Quantity_Num"].isna()
-
-# Date parsing
+# ---- Date parsing
 df["OrderDate"] = pd.to_datetime(df["OrderDate"], errors="coerce")
 df["DeliveryDate"] = pd.to_datetime(df["DeliveryDate"], errors="coerce")
 
-# Delivery metrics
-df["DeliveryDays"] = (df["DeliveryDate"] - df["OrderDate"]).dt.days
-df["MissingDelivery"] = df["DeliveryDate"].isna()
+# ---- Discount cleaning (Task 5)
+df["Discount"] = (
+    df["DiscountText"]
+    .astype(str)
+    .str.replace("%", "")
+    .str.strip()
+)
 
-# Sales calculation
+df["Discount"] = pd.to_numeric(df["Discount"], errors="coerce") / 100
+df["Discount"].fillna(0, inplace=True)
+
+# ---- Quantity cleaning & validation (Task 6)
+df["Quantity_numeric"] = pd.to_numeric(df["Quantity"], errors="coerce")
+df["Quantity_Valid"] = df["Quantity_numeric"].notna()
+
+# ---- Unit price numeric
+df["UnitPrice"] = pd.to_numeric(df["UnitPrice"], errors="coerce")
+
+# ---- Total Sales (Task 1)
 df["TotalSales"] = (
-    df["Quantity_Num"] *
+    df["Quantity_numeric"] *
     df["UnitPrice"] *
     (1 - df["Discount"])
 )
 
-# Date analytics
+# ---- Delivery Days (Task 2 & 19)
+df["DeliveryDays"] = (df["DeliveryDate"] - df["OrderDate"]).dt.days
+
+# ---- Order Year & Month (Task 3 & 4)
 df["OrderYear"] = df["OrderDate"].dt.year
 df["OrderMonth"] = df["OrderDate"].dt.month
-df["MonthName"] = df["OrderDate"].dt.month_name()
 
-# Urgent orders
-df["UrgentOrder"] = df["Notes"].str.contains("urgent", case=False, na=False)
+# ---- Month Name (Task 20)
+df["MonthName"] = df["OrderDate"].dt.strftime("%B")
 
-# Customer segmentation
-def segment(val):
-    if val > 5000:
+# ---- Missing delivery flag (Task 7)
+df["MissingDelivery"] = df["DeliveryDate"].isna()
+
+# ---- Urgent order flag (Task 8)
+df["UrgentOrder"] = df["Notes"].astype(str).str.contains("urgent", case=False)
+
+# ---- Customer Value Segmentation (Task 15)
+def segment(x):
+    if x > 5000:
         return "High Value"
-    elif val > 2000:
+    elif x > 2000:
         return "Medium Value"
     else:
         return "Low Value"
 
 df["CustomerSegment"] = df["TotalSales"].apply(segment)
 
-# Delivered orders
-delivered_df = df[df["OrderStatus"] == "Delivered"]
+# ===============================
+# SIDEBAR FILTERS
+# ===============================
+st.sidebar.header("🔍 Filters")
 
-# -------------------------------------------------
-# KPI METRICS
-# -------------------------------------------------
-total_revenue = df["TotalSales"].sum()
-avg_order_value = df["TotalSales"].mean()
-avg_delivery_days = delivered_df["DeliveryDays"].mean()
-delivered_pct = (len(delivered_df) / len(df)) * 100
-
-# -------------------------------------------------
-# KPI DISPLAY
-# -------------------------------------------------
-k1, k2, k3, k4 = st.columns(4)
-k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>Total Revenue</div><div class='kpi-value'>₹{total_revenue:,.0f}</div></div>", unsafe_allow_html=True)
-k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>Avg Order Value</div><div class='kpi-value'>₹{avg_order_value:,.0f}</div></div>", unsafe_allow_html=True)
-k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>Avg Delivery Days</div><div class='kpi-value'>{avg_delivery_days:.1f}</div></div>", unsafe_allow_html=True)
-k4.markdown(f"<div class='kpi-card'><div class='kpi-title'>Delivered %</div><div class='kpi-value'>{delivered_pct:.1f}%</div></div>", unsafe_allow_html=True)
-
-st.markdown("---")
-
-# -------------------------------------------------
-# BUSINESS ANALYTICS VISUALS
-# -------------------------------------------------
-c1, c2 = st.columns(2)
-
-region_rev = df.groupby("Region")["TotalSales"].sum().reset_index()
-c1.plotly_chart(px.bar(region_rev, x="Region", y="TotalSales",
-                       title="Revenue by Region"), use_container_width=True)
-
-monthly_rev = df.groupby("MonthName")["TotalSales"].sum().reset_index()
-c2.plotly_chart(px.line(monthly_rev, x="MonthName", y="TotalSales",
-                        markers=True, title="Monthly Revenue Trend"),
-                use_container_width=True)
-
-# -------------------------------------------------
-# CATEGORY PERFORMANCE
-# -------------------------------------------------
-cat_avg = df.groupby("ProductCategory")["TotalSales"].mean().reset_index()
-st.plotly_chart(px.bar(cat_avg, x="ProductCategory", y="TotalSales",
-                       title="Average Order Value by Category"),
-                use_container_width=True)
-
-# -------------------------------------------------
-# SEGMENTATION
-# -------------------------------------------------
-seg = df["CustomerSegment"].value_counts().reset_index()
-st.plotly_chart(px.pie(seg, names="index", values="CustomerSegment",
-                       title="Customer Value Segments"),
-                use_container_width=True)
-
-# -------------------------------------------------
-# DELIVERY DISTRIBUTION (MATPLOTLIB)
-# -------------------------------------------------
-st.subheader("📦 Delivery Time Distribution")
-fig, ax = plt.subplots()
-ax.hist(delivered_df["DeliveryDays"].dropna(), bins=10)
-ax.set_xlabel("Delivery Days")
-ax.set_ylabel("Orders")
-st.pyplot(fig)
-
-# -------------------------------------------------
-# STATISTICAL ANALYSIS
-# -------------------------------------------------
-mean_sales = df["TotalSales"].mean()
-median_sales = df["TotalSales"].median()
-std_sales = df["TotalSales"].std()
-
-df["Outlier"] = abs(df["TotalSales"] - median_sales) > std_sales
-
-st.markdown("### 📐 Statistical Summary")
-st.write({
-    "Mean Order Value": round(mean_sales, 2),
-    "Median Order Value": round(median_sales, 2),
-    "Standard Deviation": round(std_sales, 2),
-    "Outlier Orders": int(df["Outlier"].sum())
-})
-
-# -------------------------------------------------
-# DATA QUALITY REPORT
-# -------------------------------------------------
-st.markdown("### 🧹 Data Quality Report")
-st.metric("Invalid Quantity Rows", df["InvalidQuantity"].sum())
-st.metric("Missing Delivery Dates", df["MissingDelivery"].sum())
-st.metric("Urgent Orders", df["UrgentOrder"].sum())
-
-# -------------------------------------------------
-# DOWNLOAD REPORT
-# -------------------------------------------------
-st.markdown("### ⬇ Download Analytics Report")
-
-st.download_button(
-    "Download Clean CSV",
-    data=df.to_csv(index=False).encode("utf-8"),
-    file_name="Ecommerce_Analytics_Report.csv",
-    mime="text/csv"
+region_filter = st.sidebar.multiselect(
+    "Select Region",
+    options=df["Region"].dropna().unique(),
+    default=df["Region"].dropna().unique()
 )
+
+category_filter = st.sidebar.multiselect(
+    "Select Product Category",
+    options=df["ProductCategory"].dropna().unique(),
+    default=df["ProductCategory"].dropna().unique()
+)
+
+status_filter = st.sidebar.multiselect(
+    "Select Order Status",
+    options=df["OrderStatus"].dropna().unique(),
+    default=df["OrderStatus"].dropna().unique()
+)
+
+filtered_df = df[
+    (df["Region"].isin(region_filter)) &
+    (df["ProductCategory"].isin(category_filter)) &
+    (df["OrderStatus"].isin(status_filter))
+]
+
+# ===============================
+# EXECUTIVE KPIs
+# ===============================
+st.subheader("📌 Executive Summary")
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("💰 Total Revenue", f"{filtered_df['TotalSales'].sum():,.2f}")
+col2.metric("📦 Avg Order Value", f"{filtered_df['TotalSales'].mean():,.2f}")
+col3.metric("🚚 Avg Delivery Days", f"{filtered_df['DeliveryDays'].mean():.1f}")
+col4.metric("⚠️ Invalid Quantity Rows", f"{(~filtered_df['Quantity_Valid']).sum()}")
+
+# ===============================
+# SECTION 3 — BUSINESS ANALYTICS
+# ===============================
+st.subheader("📈 Sales & Business Performance")
+
+# Task 9 — Revenue by Region
+fig_region = px.bar(
+    filtered_df.groupby("Region", as_index=False)["TotalSales"].sum(),
+    x="Region", y="TotalSales",
+    title="Total Revenue by Region"
+)
+st.plotly_chart(fig_region, use_container_width=True)
+
+# Task 13 — Avg Order Value by Category
+fig_cat = px.bar(
+    filtered_df.groupby("ProductCategory", as_index=False)["TotalSales"].mean(),
+    x="ProductCategory", y="TotalSales",
+    title="Average Order Value by Category"
+)
+st.plotly_chart(fig_cat, use_container_width=True)
+
+# ===============================
+# SECTION — OPERATIONS ANALYTICS
+# ===============================
+st.subheader("🚚 Delivery & Operations")
+
+fig_delivery = px.histogram(
+    filtered_df,
+    x="DeliveryDays",
+    title="Delivery Duration Distribution"
+)
+st.plotly_chart(fig_delivery, use_container_width=True)
+
+# ===============================
+# SECTION — CUSTOMER SEGMENTATION
+# ===============================
+st.subheader("👥 Customer Segmentation")
+
+fig_segment = px.pie(
+    filtered_df,
+    names="CustomerSegment",
+    title="Customer Value Segments"
+)
+st.plotly_chart(fig_segment, use_container_width=True)
+
+# ===============================
+# SECTION — STATISTICAL ANALYSIS
+# ===============================
+st.subheader("📐 Statistical Insights")
+
+mean_val = filtered_df["TotalSales"].mean()
+median_val = filtered_df["TotalSales"].median()
+std_val = filtered_df["TotalSales"].std()
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Mean Sales", f"{mean_val:.2f}")
+col2.metric("Median Sales", f"{median_val:.2f}")
+col3.metric("Std Deviation", f"{std_val:.2f}")
+
+# Task 24 — Outliers
+filtered_df["Outlier"] = abs(filtered_df["TotalSales"] - median_val) > std_val
+
+st.write("🚨 Orders with Strong Deviation")
+st.dataframe(filtered_df[filtered_df["Outlier"]][
+    ["OrderID", "CustomerName", "TotalSales"]
+])
+
+# ===============================
+# DATA QUALITY SECTION
+# ===============================
+st.subheader("🧪 Data Quality Report")
+
+st.write("❌ Invalid Quantity Rows")
+st.dataframe(df[~df["Quantity_Valid"]])
+
+st.write("📭 Missing Delivery Dates")
+st.dataframe(df[df["MissingDelivery"]])

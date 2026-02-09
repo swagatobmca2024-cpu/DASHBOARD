@@ -198,7 +198,7 @@ col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.markdown('<div class="metric-container">', unsafe_allow_html=True)
     total_revenue = df['TotalSales'].sum()
-    st.metric("Total Revenue", f"${total_revenue:,.2f}")
+    st.metric("Total Revenue", f"₹{total_revenue:,.2f}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
@@ -210,7 +210,7 @@ with col2:
 with col3:
     st.markdown('<div class="metric-container">', unsafe_allow_html=True)
     avg_order_value = df['TotalSales'].mean()
-    st.metric("Avg Order Value", f"${avg_order_value:,.2f}")
+    st.metric("Avg Order Value", f"₹{avg_order_value:,.2f}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col4:
@@ -233,7 +233,7 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.markdown('<div class="metric-container">', unsafe_allow_html=True)
     median_order = df['TotalSales'].median()
-    st.metric("Median Order Value", f"${median_order:,.2f}")
+    st.metric("Median Order Value", f"₹{median_order:,.2f}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
@@ -273,7 +273,7 @@ with col1:
                 colorscale="Teal",
                 showscale=False
             ),
-            text=rev_region["TotalSales"].apply(lambda x: f"${x:,.0f}"),
+            text=rev_region["TotalSales"].apply(lambda x: f"₹{x:,.0f}"),
             textposition="outside"
         )
     ])
@@ -355,7 +355,7 @@ with col2:
                 color=["#00d4ff", "#00a3cc", "#007a99"],
                 line=dict(color="#ffffff", width=1.5)
             ),
-            text=avg_cat["TotalSales"].apply(lambda x: f"${x:,.0f}"),
+            text=avg_cat["TotalSales"].apply(lambda x: f"₹{x:,.0f}"),
             textposition="outside"
         )
     ])
@@ -518,7 +518,7 @@ fig = go.Figure(data=[
             showscale=False,
             line=dict(color="#ffffff", width=1)
         ),
-        text=top_customers["TotalSales"].apply(lambda x: f"${x:,.0f}"),
+        text=top_customers["TotalSales"].apply(lambda x: f"₹{x:,.0f}"),
         textposition="outside"
     )
 ])
@@ -661,7 +661,7 @@ with col1:
         (df["ProductCategory"] == "Electronics") &
         (df["Region"] == "East")
     ]["TotalSales"].sum()
-    st.metric("Electronics Revenue (East)", f"${electronics_east:,.2f}")
+    st.metric("Electronics Revenue (East)", f"₹{electronics_east:,.2f}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
@@ -718,7 +718,7 @@ with col2:
         st.markdown(f"""
         <div class="metric-container">
             <strong style="color: #00d4ff; font-size: 1.1rem;">{cat}</strong><br>
-            <span style="color: #8b95a8;">Revenue: ${cat_revenue:,.2f}</span><br>
+            <span style="color: #8b95a8;">Revenue: ₹{cat_revenue:,.2f}</span><br>
             <span style="color: #8b95a8;">Orders: {cat_orders:,}</span>
         </div>
         """, unsafe_allow_html=True)

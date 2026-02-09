@@ -2,85 +2,79 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="E-commerce Data Analytics Dashboard", layout="wide")
+st.set_page_config(page_title="E-commerce Data Analytics", layout="wide")
+st.title("📊 E-commerce Data Analytics Dashboard")
+st.caption("Junior Data Analyst | Management Reporting & Insights")
 
-st.title("📊 E-commerce Advanced Data Analytics Dashboard")
-st.caption("Upload raw order data → Clean → Analyze → Visualize")
-
-# ===============================
+# =====================================================
 # FILE UPLOAD
-# ===============================
+# =====================================================
 uploaded_file = st.sidebar.file_uploader(
-    "📂 Upload CSV or Excel file",
+    "📂 Upload Orders Dataset (CSV / Excel)",
     type=["csv", "xlsx"]
 )
 
 if uploaded_file is None:
-    st.warning("Please upload a CSV or Excel file to begin analysis.")
+    st.info("Please upload a dataset to begin analysis.")
     st.stop()
 
-# ===============================
-# LOAD DATA
-# ===============================
 if uploaded_file.name.endswith(".csv"):
     df = pd.read_csv(uploaded_file)
 else:
     df = pd.read_excel(uploaded_file)
 
-st.success("File uploaded successfully!")
+# =====================================================
+# SECTION 1 — DATA CLEANING & FEATURE ENGINEERING
+# =====================================================
+st.header("🧹 Section 1: Data Cleaning & Preparation")
 
-# ===============================
-# DATA CLEANING & FEATURE ENGINEERING
-# ===============================
-
-# ---- Date parsing
+# Dates
 df["OrderDate"] = pd.to_datetime(df["OrderDate"], errors="coerce")
 df["DeliveryDate"] = pd.to_datetime(df["DeliveryDate"], errors="coerce")
 
-# ---- Discount cleaning (Task 5)
+# Task 5 — Discount cleaning
 df["Discount"] = (
     df["DiscountText"]
     .astype(str)
     .str.replace("%", "")
     .str.strip()
 )
-
 df["Discount"] = pd.to_numeric(df["Discount"], errors="coerce") / 100
 df["Discount"].fillna(0, inplace=True)
 
-# ---- Quantity cleaning & validation (Task 6)
+# Task 6 — Quantity validation
 df["Quantity_numeric"] = pd.to_numeric(df["Quantity"], errors="coerce")
 df["Quantity_Valid"] = df["Quantity_numeric"].notna()
 
-# ---- Unit price numeric
+# Unit Price numeric
 df["UnitPrice"] = pd.to_numeric(df["UnitPrice"], errors="coerce")
 
-# ---- Total Sales (Task 1)
+# Task 1 — Total Sales
 df["TotalSales"] = (
     df["Quantity_numeric"] *
     df["UnitPrice"] *
     (1 - df["Discount"])
 )
 
-# ---- Delivery Days (Task 2 & 19)
+# Task 2 & 19 — Delivery Days
 df["DeliveryDays"] = (df["DeliveryDate"] - df["OrderDate"]).dt.days
+df.loc[df["DeliveryDays"] < 0, "DeliveryDays"] = np.nan  # data quality fix
 
-# ---- Order Year & Month (Task 3 & 4)
+# Task 3 & 4 — Order Year & Month
 df["OrderYear"] = df["OrderDate"].dt.year
 df["OrderMonth"] = df["OrderDate"].dt.month
 
-# ---- Month Name (Task 20)
+# Task 20 — Month Name
 df["MonthName"] = df["OrderDate"].dt.strftime("%B")
 
-# ---- Missing delivery flag (Task 7)
+# Task 7 — Missing Delivery Date
 df["MissingDelivery"] = df["DeliveryDate"].isna()
 
-# ---- Urgent order flag (Task 8)
+# Task 8 — Urgent Orders
 df["UrgentOrder"] = df["Notes"].astype(str).str.contains("urgent", case=False)
 
-# ---- Customer Value Segmentation (Task 15)
+# Task 15 — Customer Segmentation
 def segment(x):
     if x > 5000:
         return "High Value"
@@ -91,121 +85,100 @@ def segment(x):
 
 df["CustomerSegment"] = df["TotalSales"].apply(segment)
 
-# ===============================
-# SIDEBAR FILTERS
-# ===============================
-st.sidebar.header("🔍 Filters")
+st.success("Data cleaned and calculated successfully.")
 
-region_filter = st.sidebar.multiselect(
-    "Select Region",
-    options=df["Region"].dropna().unique(),
-    default=df["Region"].dropna().unique()
-)
-
-category_filter = st.sidebar.multiselect(
-    "Select Product Category",
-    options=df["ProductCategory"].dropna().unique(),
-    default=df["ProductCategory"].dropna().unique()
-)
-
-status_filter = st.sidebar.multiselect(
-    "Select Order Status",
-    options=df["OrderStatus"].dropna().unique(),
-    default=df["OrderStatus"].dropna().unique()
-)
-
-filtered_df = df[
-    (df["Region"].isin(region_filter)) &
-    (df["ProductCategory"].isin(category_filter)) &
-    (df["OrderStatus"].isin(status_filter))
-]
-
-# ===============================
-# EXECUTIVE KPIs
-# ===============================
-st.subheader("📌 Executive Summary")
+# =====================================================
+# SECTION 2 — EXECUTIVE METRICS
+# =====================================================
+st.header("📌 Executive Summary Metrics")
 
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("💰 Total Revenue", f"{filtered_df['TotalSales'].sum():,.2f}")
-col2.metric("📦 Avg Order Value", f"{filtered_df['TotalSales'].mean():,.2f}")
-col3.metric("🚚 Avg Delivery Days", f"{filtered_df['DeliveryDays'].mean():.1f}")
-col4.metric("⚠️ Invalid Quantity Rows", f"{(~filtered_df['Quantity_Valid']).sum()}")
+col1.metric("Total Revenue", f"{df['TotalSales'].sum():,.2f}")
+col2.metric("Average Order Value", f"{df['TotalSales'].mean():,.2f}")
+col3.metric("Median Order Value", f"{df['TotalSales'].median():,.2f}")
+col4.metric("Std Dev of Sales", f"{df['TotalSales'].std():,.2f}")
 
-# ===============================
-# SECTION 3 — BUSINESS ANALYTICS
-# ===============================
-st.subheader("📈 Sales & Business Performance")
+# =====================================================
+# SECTION 3 — BUSINESS PERFORMANCE
+# =====================================================
+st.header("📈 Business Performance Analysis")
 
 # Task 9 — Revenue by Region
-fig_region = px.bar(
-    filtered_df.groupby("Region", as_index=False)["TotalSales"].sum(),
-    x="Region", y="TotalSales",
-    title="Total Revenue by Region"
-)
-st.plotly_chart(fig_region, use_container_width=True)
+rev_region = df.groupby("Region")["TotalSales"].sum().reset_index()
+st.subheader("Total Revenue by Region")
+st.plotly_chart(px.bar(rev_region, x="Region", y="TotalSales"), use_container_width=True)
+
+# Task 10 — Electronics in East
+electronics_east = df[
+    (df["ProductCategory"] == "Electronics") &
+    (df["Region"] == "East")
+]["TotalSales"].sum()
+
+st.metric("Electronics Revenue (East)", f"{electronics_east:,.2f}")
+
+# Task 11 & 12 — Delivered Orders
+st.metric("Delivered Orders (Total)", (df["OrderStatus"] == "Delivered").sum())
+st.metric("Delivered Orders (West)", ((df["OrderStatus"] == "Delivered") & (df["Region"] == "West")).sum())
 
 # Task 13 — Avg Order Value by Category
-fig_cat = px.bar(
-    filtered_df.groupby("ProductCategory", as_index=False)["TotalSales"].mean(),
-    x="ProductCategory", y="TotalSales",
-    title="Average Order Value by Category"
+avg_cat = df.groupby("ProductCategory")["TotalSales"].mean().reset_index()
+st.subheader("Average Order Value by Category")
+st.plotly_chart(px.bar(avg_cat, x="ProductCategory", y="TotalSales"), use_container_width=True)
+
+# Task 14 — Avg Quantity in East
+avg_qty_east = df[df["Region"] == "East"]["Quantity_numeric"].mean()
+st.metric("Avg Quantity Ordered (East)", f"{avg_qty_east:.2f}")
+
+# =====================================================
+# SECTION 4 — OPERATIONS & DELIVERY
+# =====================================================
+st.header("🚚 Operations & Delivery Efficiency")
+
+valid_delivery = df["DeliveryDays"].dropna()
+st.metric("Average Delivery Days", f"{valid_delivery.mean():.2f}")
+st.metric("Orders with Missing Delivery Date", df["MissingDelivery"].sum())
+
+# =====================================================
+# SECTION 5 — CUSTOMER SEGMENTATION
+# =====================================================
+st.header("👥 Customer Segmentation")
+
+seg_counts = df["CustomerSegment"].value_counts().reset_index()
+seg_counts.columns = ["Segment", "Count"]
+
+st.plotly_chart(px.pie(seg_counts, names="Segment", values="Count"), use_container_width=True)
+
+# Task 17 — Unique Product Categories
+st.subheader("Unique Product Categories")
+st.write(df["ProductCategory"].unique())
+
+# Task 18 — Top Orders
+st.subheader("Top Orders by Total Sales")
+st.dataframe(df.sort_values("TotalSales", ascending=False).head(10))
+
+# =====================================================
+# SECTION 6 — STATISTICAL ANALYSIS & OUTLIERS
+# =====================================================
+st.header("📐 Statistical Analysis")
+
+median = df["TotalSales"].median()
+std = df["TotalSales"].std()
+
+df["Outlier"] = abs(df["TotalSales"] - median) > std
+
+st.metric("Outlier Orders Count", df["Outlier"].sum())
+st.dataframe(df[df["Outlier"]][["OrderID", "CustomerName", "TotalSales"]])
+
+# =====================================================
+# DOWNLOAD CLEANED DATA
+# =====================================================
+st.header("⬇️ Download Cleaned & Calculated Dataset")
+
+csv = df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    "Download CSV with All 24 Calculations",
+    csv,
+    "ecommerce_analytics_cleaned.csv",
+    "text/csv"
 )
-st.plotly_chart(fig_cat, use_container_width=True)
-
-# ===============================
-# SECTION — OPERATIONS ANALYTICS
-# ===============================
-st.subheader("🚚 Delivery & Operations")
-
-fig_delivery = px.histogram(
-    filtered_df,
-    x="DeliveryDays",
-    title="Delivery Duration Distribution"
-)
-st.plotly_chart(fig_delivery, use_container_width=True)
-
-# ===============================
-# SECTION — CUSTOMER SEGMENTATION
-# ===============================
-st.subheader("👥 Customer Segmentation")
-
-fig_segment = px.pie(
-    filtered_df,
-    names="CustomerSegment",
-    title="Customer Value Segments"
-)
-st.plotly_chart(fig_segment, use_container_width=True)
-
-# ===============================
-# SECTION — STATISTICAL ANALYSIS
-# ===============================
-st.subheader("📐 Statistical Insights")
-
-mean_val = filtered_df["TotalSales"].mean()
-median_val = filtered_df["TotalSales"].median()
-std_val = filtered_df["TotalSales"].std()
-
-col1, col2, col3 = st.columns(3)
-col1.metric("Mean Sales", f"{mean_val:.2f}")
-col2.metric("Median Sales", f"{median_val:.2f}")
-col3.metric("Std Deviation", f"{std_val:.2f}")
-
-# Task 24 — Outliers
-filtered_df["Outlier"] = abs(filtered_df["TotalSales"] - median_val) > std_val
-
-st.write("🚨 Orders with Strong Deviation")
-st.dataframe(filtered_df[filtered_df["Outlier"]][
-    ["OrderID", "CustomerName", "TotalSales"]
-])
-
-# ===============================
-# DATA QUALITY SECTION
-# ===============================
-st.subheader("🧪 Data Quality Report")
-
-st.write("❌ Invalid Quantity Rows")
-st.dataframe(df[~df["Quantity_Valid"]])
-
-st.write("📭 Missing Delivery Dates")
-st.dataframe(df[df["MissingDelivery"]])

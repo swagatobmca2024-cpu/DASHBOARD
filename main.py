@@ -178,8 +178,12 @@ st.header("⬇️ Download Cleaned & Calculated Dataset")
 csv = df.to_csv(index=False).encode("utf-8")
 st.download_button(
     "Download CSV with All 24 Calculations",
+    csv,
+    "ecommerce_analytics_cleaned.csv",
+    "text/csv"
+)
 
-    # =====================================================
+# =====================================================
 # SECTION 7 — ADVANCED ANALYTICS & VISUALIZATIONS
 # =====================================================
 st.header("📊 Advanced Analytics & Visual Insights")
@@ -334,9 +338,3 @@ fig = px.bar(
     title="Top 10 Customers by Revenue",
 )
 st.plotly_chart(fig, use_container_width=True)
-
-    
-    csv,
-    "ecommerce_analytics_cleaned.csv",
-    "text/csv"
-)

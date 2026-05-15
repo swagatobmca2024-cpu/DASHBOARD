@@ -348,32 +348,38 @@ label[data-testid="stWidgetLabel"] > div > p {
   color: var(--text-dim) !important;
 }
 
-/* ── Buttons ── */
+/* ── Buttons (general) ── */
 .stButton > button {
   font-family: var(--mono) !important;
-  font-size: 0.75rem !important;
+  font-size: 0.72rem !important;
   font-weight: 600 !important;
   letter-spacing: 1px !important;
   text-transform: uppercase !important;
-  border-radius: 4px !important;
+  border-radius: 0 !important;
   transition: all 0.15s !important;
 }
-.stButton > button[kind="primary"] {
-  background: var(--accent) !important;
-  color: #000 !important;
-  border: none !important;
-}
-.stButton > button[kind="primary"]:hover {
-  background: #33d6ff !important;
-  box-shadow: 0 0 16px var(--accent-glow) !important;
-}
+/* Tab buttons — inactive */
 .stButton > button[kind="secondary"] {
-  background: transparent !important;
-  color: var(--text-secondary) !important;
+  background: var(--bg-surface) !important;
+  color: var(--text-dim) !important;
   border: 1px solid var(--border) !important;
+  border-bottom: 2px solid transparent !important;
 }
 .stButton > button[kind="secondary"]:hover {
-  border-color: var(--accent) !important;
+  color: var(--text-secondary) !important;
+  background: var(--bg-hover) !important;
+  border-color: var(--border-active) !important;
+}
+/* Tab buttons — active */
+.stButton > button[kind="primary"] {
+  background: var(--accent-dim) !important;
+  color: var(--accent) !important;
+  border: 1px solid var(--accent) !important;
+  border-bottom: 2px solid var(--accent) !important;
+  box-shadow: 0 0 10px var(--accent-glow) !important;
+}
+.stButton > button[kind="primary"]:hover {
+  background: var(--accent-dim) !important;
   color: var(--accent) !important;
 }
 
@@ -473,6 +479,21 @@ hr { border-color: var(--border) !important; }
   display: flex;
   justify-content: space-between;
   margin-top: 2rem;
+}
+
+/* ── Action buttons (non-tab secondary buttons that need accent colour) ── */
+/* Target by key suffix patterns via Streamlit data-testid not available,
+   so we style all secondary buttons that sit inside known wrapper divs.
+   Generic secondary buttons in forms look like bordered accent buttons. */
+[data-testid="stForm"] .stButton > button[kind="secondary"],
+[data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"]:not([data-tab-btn]) {
+  border-color: var(--border-active) !important;
+  color: var(--text-secondary) !important;
+}
+[data-testid="stForm"] .stButton > button[kind="secondary"]:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: var(--accent-dim) !important;
 }
 </style>
 """
@@ -1315,19 +1336,27 @@ def render_metric_strip(m: Dict):
 
 
 def tab_nav(tabs: List[str]) -> str:
+    """Render tab bar using real Streamlit buttons so clicks trigger reruns."""
     active = st.session_state.active_tab
-    btns   = "".join(
-        f'<button class="tab-btn{"  active" if t == active else ""}" '
-        f'onclick="window.location.href=\'?tab={t}\'">{t}</button>'
-        for t in tabs
+
+    # Inject CSS for the tab strip container (visual styling only)
+    st.markdown('<div class="tab-nav-spacer"></div>', unsafe_allow_html=True)
+
+    cols = st.columns(len(tabs))
+    for col, t in zip(cols, tabs):
+        is_active = (t == active)
+        # Active tab: primary style (accent colour); inactive: plain secondary
+        label = f"▸ {t}" if is_active else t
+        if col.button(label, key=f"_tab_{t}", use_container_width=True,
+                      type="primary" if is_active else "secondary"):
+            st.session_state.active_tab = t
+            st.rerun()
+
+    # Thin separator line beneath tabs
+    st.markdown(
+        '<hr style="margin:0.3rem 0 1rem 0;border-color:var(--border);">',
+        unsafe_allow_html=True,
     )
-    st.markdown(f'<div class="tab-nav">{btns}</div>', unsafe_allow_html=True)
-
-    # Query-param driven navigation
-    params = st.query_params
-    if "tab" in params and params["tab"] in tabs:
-        st.session_state.active_tab = params["tab"]
-
     return st.session_state.active_tab
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1436,15 +1465,13 @@ def render_trade(holdings: List[Dict]):
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Colour-coded action button
-        if action == "BUY":
-            st.markdown('<div class="buy-btn">', unsafe_allow_html=True)
-            clicked = st.button(f"⬆  EXECUTE BUY — {qty} × {ticker_input}", type="primary", key="exec_btn")
-            st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="sell-btn">', unsafe_allow_html=True)
-            clicked = st.button(f"⬇  EXECUTE SELL — {qty} × {ticker_input}", type="primary", key="exec_btn")
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Colour-coded action button — uses CSS class wrapper (buy-btn/sell-btn)
+        exec_label = (f"⬆  EXECUTE BUY — {qty} × {ticker_input}" if action == "BUY"
+                      else f"⬇  EXECUTE SELL — {qty} × {ticker_input}")
+        wrapper_cls = "buy-btn" if action == "BUY" else "sell-btn"
+        st.markdown(f'<div class="{wrapper_cls}">', unsafe_allow_html=True)
+        clicked = st.button(exec_label, key="exec_btn", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
         if clicked and ticker_input:
             try:
@@ -1542,7 +1569,7 @@ def render_watchlist():
     with col_add:
         st.markdown('<div class="section-header">ADD TO WATCHLIST</div>', unsafe_allow_html=True)
         new_ticker = st.text_input("TICKER", key="wl_add_inp", placeholder="e.g. NVDA").upper().strip()
-        if st.button("ADD TICKER", key="wl_add_btn", type="primary"):
+        if st.button("ADD TICKER", key="wl_add_btn", type="secondary"):
             if new_ticker and new_ticker not in st.session_state.watchlist:
                 st.session_state.watchlist.append(new_ticker)
                 st.success(f"Added {new_ticker}")
@@ -1631,7 +1658,7 @@ def render_analytics(holdings: List[Dict], metrics: Dict):
         sim_sims = st.slider("SIMULATIONS", 200, 5000, st.session_state.mc_params["sims"],
                              step=200, key="mc_sims")
     with c3:
-        if st.button("▶  RUN SIMULATION", type="primary", key="run_mc"):
+        if st.button("▶  RUN SIMULATION", type="secondary", key="run_mc"):
             with st.spinner("Running Monte Carlo…"):
                 tickers = tuple(h["ticker"] for h in holdings)
                 total   = sum(h["current_value"] for h in holdings)
@@ -1767,7 +1794,7 @@ def render_rebalance(holdings: List[Dict], metrics: Dict):
         total_w = sum(new_target.values())
         if total_w != 100:
             st.warning(f"Weights sum to {total_w}% (should be 100%)")
-        if st.button("SAVE TARGETS", type="primary", key="save_targets"):
+        if st.button("SAVE TARGETS", type="secondary", key="save_targets"):
             st.session_state.target_alloc = new_target
             st.success("Target allocation saved")
 
